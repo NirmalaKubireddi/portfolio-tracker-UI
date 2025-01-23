@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Tracker</title>
+    <style>
+        .container { margin: 2rem; }
+        .section-title { font-size: 1.25rem; font-weight: 500; margin-bottom: 1rem; }
+        .form-container { margin-top: 2rem; }
+        .input-group { display: flex; gap: 1rem; margin-bottom: 1rem; }
+        .input-field { flex: 1; padding: 0.5rem; border: 1px solid #D1D5DB; border-radius: 0.25rem; }
+        .add-button { background-color: #2563EB; color: white; padding: 0.5rem 1rem; border: none; border-radius: 0.25rem; cursor: pointer; }
+        .table-container { margin-top: 2rem; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { text-align: left; padding: 1rem; border: 1px solid #D1D5DB; }
+        th { background-color: #F9FAFB; }
+        .overview-container { margin-top: 2rem; }
+        .overview-item { margin-bottom: 1rem; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h2 class="section-title">Portfolio Tracker</h2>
+        <div class="form-container">
+            <h2 class="section-title">Add / Edit Stock</h2>
+            <div class="input-group">
+                <input type="text" id="stock-name" placeholder="Stock Name" class="input-field">
+                <input type="text" id="stock-ticker" placeholder="Ticker" class="input-field">
+                <input type="number" id="stock-quantity" placeholder="Quantity" class="input-field">
+                <input type="number" id="stock-buy-price" placeholder="Buy Price" class="input-field">
+                <button class="add-button" id="add-stock-btn">Add Stock</button>
+            </div>
+        </div>
+        <div class="overview-container">
+            <h2 class="section-title">Portfolio Overview</h2>
+            <div class="overview-item" id="total-value">Total Portfolio Value: $0.00</div>
+            <div class="overview-item" id="total-stocks">Total Stocks: 0</div>
+            <div class="overview-item" id="top-performer">Top Performer: N/A</div>
+        </div>
+        <div class="table-container">
+            <h2 class="section-title">Stock Holdings</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Stock</th>
+                        <th>Ticker</th>
+                        <th>Quantity</th>
+                        <th>Buy Price</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="stock-table-body">
+                    <!-- Rows will be dynamically added here -->
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function() {
+            const API_BASE_URL = "http://localhost:8080/api/stocks";
+
+            const elements = {
+                stockName: document.getElementById('stock-name'),
+                stockTicker: document.getElementById('stock-ticker'),
+                stockQuantity: document.getElementById('stock-quantity'),
+                stockBuyPrice: document.getElementById('stock-buy-price'),
+                addStockButton: document.getElementById('add-stock-btn'),
+                stockTableBody: document.getElementById('stock-table-body'),
+                totalValue: document.getElementById('total-value'),
+                totalStocks: document.getElementById('total-stocks'),
+                topPerformer: document.getElementById('top-performer')
+            };
+
+            let state = {
+                stocks: []
+            };
+
+            // Fetch stocks from the backend
+            async function fetchStocks() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/data`);
+                    if (!response.ok) throw new Error("Failed to fetch stocks");
+                    const stocks = await response.json();
+                    state.stocks = stocks;
+                    renderStockTable();
+                    updatePortfolioOverview();
+                } catch (error) {
+                    console.error("Error:", error);
+                    alert("Error fetching stock data");
+                }
+            }
+
+            // Add or update stock
+            async function handleAddUpdateStock() {
+                const stockData = {
+                    name: elements.stockName.value.trim(),
+                    ticker: elements.stockTicker.value.trim(),
+                    quantity: parseFloat(elements.stockQuantity.value),
+                    buyPrice: parseFloat(elements.stockBuyPrice.value)
+                };
+
+                const editId = elements.addStockButton.dataset.editId;
+
+                try {
+                    const url = editId 
+                        ? `${API_BASE_URL}/update/${editId}` // Update endpoint
+                        : `${API_BASE_URL}/postdata`; // Add endpoint
+
+                    const method = editId ? "PUT" : "POST"; // Change method based on edit status
+
+                    const response = await fetch(url, {
+                        method: method,
+                        headers: {
+                            "Content-Type": "application/json"
+                        },
+                        body: JSON.stringify(stockData)
+                    });
+
+                    if (!response.ok) throw new Error('Failed to save stock data');
+                    const result = await response.json();
+
+                    if (editId) {
+                        // Update the stock in the state
+                        state.stocks = state.stocks.map(stock =>
+                            stock.id === parseInt(editId) ? result : stock
+                        );
+                    } else {
+                        // Add new stock to the state
+                        state.stocks.push(result);
+                    }
+
+                    resetForm();
+                    renderStockTable();
+                    updatePortfolioOverview();
+                } catch (error) {
+                    console.error("Error:", error);
+                    alert("Error saving stock data");
+                }
+            }
+
+            // Delete stock
+            async function handleDeleteStock(id) {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/delete/${id}`, { method: "DELETE" });
+                    if (!response.ok) throw new Error("Failed to delete stock");
+                    state.stocks = state.stocks.filter(stock => stock.id !== id);
+                    renderStockTable();
+                    updatePortfolioOverview();
+                } catch (error) {
+                    console.error("Error:", error);
+                    alert("Error deleting stock");
+                }
+            }
+
+            // Render stock table
+            function renderStockTable() {
+                elements.stockTableBody.innerHTML = state.stocks.map(stock => `
+                    <tr>
+                        <td>${stock.name}</td>
+                        <td>${stock.ticker}</td>
+                        <td>${stock.quantity}</td>
+                        <td>$${stock.buyPrice.toFixed(2)}</td>
+                        <td>
+                            <button class="edit-btn" data-id="${stock.id}">Edit</button>
+                            <button class="delete-btn" data-id="${stock.id}">Delete</button>
+                        </td>
+                    </tr>
+                `).join("");
+
+                document.querySelectorAll(".edit-btn").forEach(btn => {
+                    btn.addEventListener("click", () => {
+                        const stock = state.stocks.find(s => s.id === parseInt(btn.dataset.id));
+                        elements.stockName.value = stock.name;
+                        elements.stockTicker.value = stock.ticker;
+                        elements.stockQuantity.value = stock.quantity;
+                        elements.stockBuyPrice.value = stock.buyPrice;
+                        elements.addStockButton.textContent = "Update Stock";
+                        elements.addStockButton.dataset.editId = stock.id;
+                    });
+                });
+
+                document.querySelectorAll(".delete-btn").forEach(btn => {
+                    btn.addEventListener("click", () => handleDeleteStock(parseInt(btn.dataset.id)));
+                });
+            }
+
+            // Update portfolio overview
+            function updatePortfolioOverview() {
+                const totalValue = state.stocks.reduce((sum, stock) => 
+                    sum + (stock.quantity * stock.buyPrice), 0
+                );
+
+                const totalStocks = state.stocks.length;
+
+                const topPerformer = state.stocks.reduce((best, stock) => 
+                    (stock.quantity * stock.buyPrice) > (best.quantity * best.buyPrice)
+                        ? stock : best, { name: "N/A" });
+
+                elements.totalValue.textContent = `Total Portfolio Value: $${totalValue.toFixed(2)}`;
+                elements.totalStocks.textContent = `Total Stocks: ${totalStocks}`;
+                elements.topPerformer.textContent = `Top Performer: ${topPerformer.name}`;
+            }
+
+            // Reset form
+            function resetForm() {
+                elements.stockName.value = "";
+                elements.stockTicker.value = "";
+                elements.stockQuantity.value = "";
+                elements.stockBuyPrice.value = "";
+                elements.addStockButton.textContent = "Add Stock";
+                delete elements.addStockButton.dataset.editId;
+            }
+
+            // Initialize app
+            elements.addStockButton.addEventListener("click", handleAddUpdateStock);
+            fetchStocks();
+        });
+    </script>
+</body>
+</html>
